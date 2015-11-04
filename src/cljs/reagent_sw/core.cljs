@@ -24,7 +24,7 @@
 		clojure.string/capitalize))
 	
 (defn detail-columns [keys]
-	(filter #(not (some #{%} '("films" "created" "edited" "url"))) keys))
+	(filter #(not (some #{%} '("films" "created" "edited" "url" "homeworld" "species" "vehicles" "starships"))) keys))
 	
 (defn load-starships [url]
 	(ajax/GET url 
@@ -58,7 +58,7 @@
 	(str "http://swapi.co/api/starships/" starship-id "/"))
 	
 (defn build-pilot-url [pilot-id]
-	(str "http://swapi.co/api/pilots/" pilot-id "/"))
+	(str "http://swapi.co/api/people/" pilot-id "/"))
 
 (defn retrieve-starship [starship-id]
 	(js/console.log (str "Retrieving " starship-id))
@@ -67,30 +67,28 @@
 (defn retrieve-pilot [pilot-id]
 	(retrieve-detail (build-pilot-url pilot-id) pilot-details))
 	
+(defn parse-sw-api-id [url object-name]
+	(nth (re-find (re-pattern (str "http://swapi.co/api/" object-name "/(\\d+)/")) url) 1))
+	
 (defn parse-starship-id [url]
-	(nth (re-find #"http://swapi.co/api/starships/(\d+)/" url) 1))
+	(parse-sw-api-id url "starships"))
+	
+(defn parse-pilot-id [url]
+	(parse-sw-api-id url "people"))
 
 ;; -------------------------
 ;; Views
-
-(comment
-(defn home-page []
-  [:div [:h2 "Welcome to reagent-sw"]
-   [:div [:a {:href "#/about"} "go to about page"]]])
-
-(defn about-page []
-  [:div [:h2 "About reagent-sw"]
-   [:div [:a {:href "#/"} "go to the home page"]]])
-)
 
 (defn current-page []
   [:div [(session/get :current-page)]])
 
 (defn starships-row [starship]
-	[:tr {:key (str "starship-" (parse-starship-id (get starship "url")))}
-		[:td [:a {:href (str "#/starship?id=" (parse-starship-id (get starship "url")))}(get starship "name")]]
+	(let [starship-id (parse-starship-id (get starship "url"))
+	      starship-name (get starship "name")]
+	[:tr {:key (str "starship-" starship-id)}
+		[:td [:a {:href (str "#/starship?id=" starship-id)} starship-name]]
 		[:td (get starship "model")]
-	]
+	])
 )
 
 (defn starships-table [starships]
@@ -120,10 +118,15 @@
 		  data (get detail column)]
 		[:tr (build-detail-key detail-name column) [:th label] [:td data]]))
 		
+(defn pilot-element [pilot-url]
+	(let [pilot-id (parse-pilot-id pilot-url)
+		  pilot (retrieve-pilot pilot-id)]
+		[:li {:key (str "pilot-" pilot-id)} [:a {:href (str "#/pilot?id=" pilot-id)} (get pilot "name")]]))
+		
 (defn pilot-detail-row [detail column detail-name]
 	(let [label "Pilots"
-		  data (map #([:li %]) (get detail "pilots"))]
-		[:tr (build-detail-key detail-name column) [:th label] [:td (count data)]]))
+		  data (map #(pilot-element %) (get detail "pilots"))]
+		[:tr (build-detail-key detail-name column) [:th label] [:td data]]))
 		
 (defn detail-row [column]
 	(if (= column "pilots")
@@ -144,8 +147,15 @@
 		:componentWillMount #(retrieve-starship (session/get :starship-id))
 		:display-name "starship detail"
 		:reagent-render (fn [] (detail-page (get @starship-details (build-starship-url (session/get :starship-id))) "starships"))
-	})
-	)
+	}))
+	
+(defn pilot-page []
+	(js/console.log (str "pilot page " (session/get :pilot-id)))
+	(reagent/create-class {
+		:componentWillMount #(retrieve-pilot (session/get :pilot-id))
+		:display-name "pilot detail"
+		:reagent-render (fn [] (detail-page (get @pilot-details (build-pilot-url (session/get :pilot-id))) "people"))
+	}))	
 
 
 ;; -------------------------
@@ -160,6 +170,11 @@
   (js/console.log (str "routed to starship " (:id query-params)))
   (session/put! :starship-id (:id query-params))
   (session/put! :current-page #'starship-page))
+
+(secretary/defroute "/pilot" [query-params]
+  (js/console.log (str "routed to pilot " (:id query-params)))
+  (session/put! :pilot-id (:id query-params))
+  (session/put! :current-page #'pilot-page))
 
 ;; -------------------------
 ;; History
